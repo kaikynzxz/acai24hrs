@@ -1,0 +1,18 @@
+import { env } from "cloudflare:workers";
+import { eq } from "drizzle-orm";
+import { getDb } from "../../../db";
+import { orders } from "../../../db/schema";
+const prices:Record<string,{name:string;cents:number}>={550:{name:"Açaí 550ml",cents:2400},casal:{name:"Combo casal 2× 550ml",cents:4048},"330":{name:"Açaí 330ml",cents:1800},"440":{name:"Açaí 440ml",cents:2200},"770":{name:"Açaí 770ml",cents:3200},"1l":{name:"Açaí 1 litro",cents:4800},especial:{name:"Especial Nutella + Ninho",cents:3500},shake:{name:"Milk-shake Ferrero Rocher",cents:2250},sorvete:{name:"Sorvete Ferrero Rocher",cents:1700}};
+const premium:Record<string,number>={"Paçoquê":300,"Choco-Malte":400,"Creme de Ninho":350,"Nutella":400};
+type Input={customer:{name?:string;phone?:string;address?:string};cart:Array<{id:string;qty:number;premium?:string[];extras?:string[];cutlery?:string}>};
+export async function POST(request:Request){
+ const key=env.STRIPE_SECRET_KEY as string|undefined;if(!key)return Response.json({error:"O checkout está pronto, mas a conta de pagamentos da loja ainda precisa ser conectada."},{status:503});
+ const body=await request.json() as Input;if(!body.customer?.name||!body.customer.phone||!body.customer.address||!Array.isArray(body.cart)||!body.cart.length)return Response.json({error:"Confira os dados de entrega e a sacola."},{status:400});
+ let total=0;let items;try{items=body.cart.map(item=>{const product=prices[item.id];const qty=Math.max(1,Math.min(20,Number(item.qty)||1));if(!product)throw new Error();const extras=(item.premium||[]).reduce((s,x)=>s+(premium[x]||0),0);total+=(product.cents+extras)*qty;return{...item,qty,name:product.name,unitCents:product.cents+extras}})}catch{return Response.json({error:"Há um produto inválido na sacola."},{status:400})}
+ if(total<1400)return Response.json({error:"O pedido mínimo é R$ 14,00."},{status:400});const orderId=crypto.randomUUID();
+ await getDb().insert(orders).values({id:orderId,customerName:String(body.customer.name).slice(0,120),customerPhone:String(body.customer.phone).slice(0,30),deliveryAddress:String(body.customer.address).slice(0,300),itemsJson:JSON.stringify(items),totalCents:total,status:"pending",createdAt:Date.now()});
+ const origin=new URL(request.url).origin;const params=new URLSearchParams({mode:"payment",success_url:`${origin}/pedido-confirmado?pedido=${orderId}`,cancel_url:`${origin}/?checkout=cancelado`,"metadata[order_id]":orderId,"payment_method_types[0]":"card","payment_method_types[1]":"pix"});
+ items.forEach((item,i)=>{params.set(`line_items[${i}][quantity]`,String(item.qty));params.set(`line_items[${i}][price_data][currency]`,"brl");params.set(`line_items[${i}][price_data][unit_amount]`,String(item.unitCents));params.set(`line_items[${i}][price_data][product_data][name]`,item.name)});
+ const stripe=await fetch("https://api.stripe.com/v1/checkout/sessions",{method:"POST",headers:{authorization:`Bearer ${key}`,"content-type":"application/x-www-form-urlencoded"},body:params});const session=await stripe.json() as {id?:string;url?:string;error?:{message?:string}};
+ if(!stripe.ok||!session.id||!session.url)return Response.json({error:session.error?.message||"Não foi possível abrir o pagamento."},{status:502});await getDb().update(orders).set({stripeSessionId:session.id}).where(eq(orders.id,orderId));return Response.json({url:session.url});
+}
