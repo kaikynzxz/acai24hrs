@@ -1,23 +1,10 @@
 "use client";
 import {useState} from "react";
 import Link from "next/link";
-
 const labels:Record<string,string>={pending:"Aguardando pagamento",paid:"Pagamento confirmado",preparing:"Em preparo",delivery:"Saiu para entrega",completed:"Entregue",cancelled:"Cancelado"};
-
 export default function Orders(){
  const [result,setResult]=useState<{id:string;status:string;totalCents:number;createdAt:number}|null>(null);
- const [message,setMessage]=useState("");
- async function submit(e:React.FormEvent<HTMLFormElement>){
-  e.preventDefault();setMessage("Consultando…");setResult(null);
-  const fd=new FormData(e.currentTarget);
-  const orderId=String(fd.get("orderId")||"").trim();
-  const phone=String(fd.get("phone")||"").replace(/\D/g,"");
-  if(orderId.toUpperCase()==="TESTE-ACAI-24"&&phone==="31912345678"){
-   setResult({id:"TESTE-ACAI-24",status:"preparing",totalCents:3950,createdAt:Date.now()});setMessage("");return;
-  }
-  const res=await fetch("/api/order-status",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({orderId,phone})});
-  const data=await res.json() as {order?:typeof result;error?:string};
-  if(data.order){setResult(data.order);setMessage("")}else setMessage(data.error||"Não foi possível consultar.");
- }
- return <main className="orders-page"><section className="orders-card"><Link className="logo" href="/"><img src="/logo-acai-24-horas.jpg" alt="Logo Açaí 24 horas"/><b>Açaí 24 horas</b></Link><small>ACOMPANHE SEU PEDIDO</small><h1>Meus pedidos</h1><p>Digite o código recebido após o pagamento e o WhatsApp usado na compra.</p><form onSubmit={submit}><label>Número do pedido<input name="orderId" required placeholder="Ex.: 123e4567-e89b…"/></label><label>WhatsApp<input name="phone" required inputMode="tel" placeholder="(00) 00000-0000"/></label><button className="primary" type="submit">Consultar pedido <span>→</span></button></form>{message&&<p role="status" className="order-message">{message}</p>}{result&&<article className="order-result"><small>PEDIDO</small><code>{result.id}</code><h2>{labels[result.status]||result.status}</h2><p>Total: <b>{(result.totalCents/100).toLocaleString("pt-BR",{style:"currency",currency:"BRL"})}</b></p><div className={`status-line status-${result.status}`}/></article>}<Link className="back-store" href="/">← Voltar ao cardápio</Link></section></main>;
+ const [message,setMessage]=useState(""); const [modalOpen,setModalOpen]=useState(false);
+ async function submit(e:React.FormEvent<HTMLFormElement>){e.preventDefault();setMessage("Consultando…");setResult(null);const fd=new FormData(e.currentTarget);const orderId=String(fd.get("orderId")||"").trim();const phone=String(fd.get("phone")||"").replace(/\D/g,"");if(orderId.toUpperCase()==="TESTE-ACAI-24"&&phone==="31912345678"){setResult({id:"TESTE-ACAI-24",status:"preparing",totalCents:3950,createdAt:Date.now()});setModalOpen(true);setMessage("");return}const res=await fetch("/api/order-status",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({orderId,phone})});const data=await res.json() as {order?:typeof result;error?:string};if(data.order){setResult(data.order);setModalOpen(true);setMessage("")}else setMessage(data.error||"Não foi possível consultar.")}
+ return <main className="orders-page"><section className="orders-card"><Link className="logo" href="/"><img src="/logo-acai-24-horas.jpg" alt="Logo Açaí 24 horas"/><b>Açaí 24 horas</b></Link><small>ACOMPANHE SEU PEDIDO</small><h1>Meus pedidos</h1><p>Digite o código recebido após o pagamento e o WhatsApp usado na compra.</p><form onSubmit={submit}><label>Número do pedido<input name="orderId" required placeholder="Ex.: 123e4567-e89b…"/></label><label>WhatsApp<input name="phone" required inputMode="tel" placeholder="(00) 00000-0000"/></label><button className="primary" type="submit">Consultar pedido <span>→</span></button></form>{message&&<p role="status" className="order-message">{message}</p>}{result&&modalOpen&&<div className="order-modal-backdrop" role="presentation" onClick={()=>setModalOpen(false)}><article className="order-modal" role="dialog" aria-modal="true" aria-label="Status do pedido" onClick={e=>e.stopPropagation()}><button className="modal-close" onClick={()=>setModalOpen(false)} aria-label="Fechar resultado">×</button><small>STATUS DO PEDIDO</small><code>{result.id}</code><h2>{labels[result.status]||result.status}</h2><p>Total: <b>{(result.totalCents/100).toLocaleString("pt-BR",{style:"currency",currency:"BRL"})}</b></p><div className={`status-line status-${result.status}`}/><button className="primary" onClick={()=>setModalOpen(false)}>Entendi <span>✓</span></button></article></div>}<Link className="back-store" href="/">← Voltar ao cardápio</Link></section></main>;
 }
