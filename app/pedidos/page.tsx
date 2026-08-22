@@ -42,18 +42,27 @@ export default function Orders() {
     const fd = new FormData(e.currentTarget);
     const orderId = String(fd.get("orderId") ?? "").trim();
     const phone = String(fd.get("phone") ?? "").replace(/\D/g, "");
-    const res = await fetch("/api/order-status", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ orderId, phone }),
-    });
-    const data = await res.json() as { order?: typeof result; error?: string };
-    if (data.order) {
-      setResult(data.order);
-      setModalOpen(true);
-      setMessage("");
-    } else {
-      setMessage(data.error ?? "Não foi possível consultar.");
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 12_000);
+    try {
+      const res = await fetch("/api/order-status", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ orderId, phone }),
+        signal: controller.signal,
+      });
+      const data = await res.json() as { order?: typeof result; error?: string };
+      if (data.order) {
+        setResult(data.order);
+        setModalOpen(true);
+        setMessage("");
+      } else {
+        setMessage(data.error ?? "Não foi possível consultar.");
+      }
+    } catch {
+      setMessage("Não foi possível consultar agora. Tente novamente.");
+    } finally {
+      window.clearTimeout(timeout);
     }
   }
 
