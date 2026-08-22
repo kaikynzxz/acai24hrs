@@ -1,3 +1,31 @@
-import {NextResponse} from "next/server";
-const adminUid="bd6c3942-4ecf-45b4-a438-8e5002aa110a";
-export async function POST(request:Request){const body=await request.json().catch(()=>null) as {email?:string;password?:string}|null;const url=process.env.SUPABASE_URL,key=process.env.SUPABASE_ANON_KEY;if(!url||!key)return NextResponse.json({error:"Supabase ainda não configurado."},{status:503});const r=await fetch(`${url}/auth/v1/token?grant_type=password`,{method:"POST",headers:{apikey:key,"content-type":"application/json"},body:JSON.stringify({email:body?.email,password:body?.password})});const data=await r.json() as {user?:{id?:string}};if(!r.ok||data.user?.id!==adminUid)return NextResponse.json({error:"Acesso não autorizado."},{status:401});const response=NextResponse.json({ok:true});response.cookies.set("acai_admin_session","active",{httpOnly:true,secure:true,sameSite:"lax",path:"/",maxAge:60*60*8});return response;}
+import { NextResponse } from "next/server";
+import { createAuthClient } from "../../../../lib/supabase";
+
+const ADMIN_UID = "bd6c3942-4ecf-45b4-a438-8e5002aa110a";
+
+export async function POST(request: Request) {
+  const body = await request.json().catch(() => null) as { email?: string; password?: string } | null;
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_ANON_KEY;
+  if (!url || !key) return NextResponse.json({ error: "Supabase não configurado." }, { status: 503 });
+
+  const client = createAuthClient();
+  const { data, error } = await client.auth.signInWithPassword({
+    email: body?.email ?? "",
+    password: body?.password ?? "",
+  });
+
+  if (error || !data.user || data.user.id !== ADMIN_UID) {
+    return NextResponse.json({ error: "E-mail ou senha inválidos." }, { status: 401 });
+  }
+
+  const response = NextResponse.json({ ok: true });
+  response.cookies.set("acai_admin_token", data.session.access_token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: 60 * 60 * 8, // 8 horas
+  });
+  return response;
+}
