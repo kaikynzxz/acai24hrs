@@ -57,9 +57,16 @@ export async function POST(request: Request) {
 
   let total = 0;
   let items: Array<{ id: string; qty: number; name: string; unitCents: number; topping?: string; notes?: string; extras?: string[]; premium?: string[] }>;
+  const dbResult = await supabaseServer.from("products").select("id,price_cents,sale_price_cents,is_available");
+  const dbProducts = new Map((dbResult.error ? [] : dbResult.data ?? []).map(p => [p.id, p]));
   try {
     items = body.cart.map(item => {
-      const product = prices[item.id];
+      const staticProduct = prices[item.id];
+      const saved = dbProducts.get(item.id);
+      const product = staticProduct && (!saved || saved.is_available !== false) ? {
+        ...staticProduct,
+        cents: saved && Number.isFinite(saved.sale_price_cents) && Number(saved.sale_price_cents) < saved.price_cents ? Number(saved.sale_price_cents) : (saved?.price_cents ?? staticProduct.cents),
+      } : undefined;
       const qty = Math.max(1, Math.min(20, Number(item.qty) || 1));
       if (!product) throw new Error();
       const needsTopping = item.id.startsWith("shake-") || item.id.startsWith("sorvete-");

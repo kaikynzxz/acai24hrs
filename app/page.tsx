@@ -69,6 +69,7 @@ export default function Store() {
   const [hours, setHours] = useState(storeStatus);
   const [manualClosed, setManualClosed] = useState(false);
   const [cancelledNotice, setCancelledNotice] = useState(false);
+  const [catalog, setCatalog] = useState(products);
 
   useEffect(() => {
     try {
@@ -80,6 +81,19 @@ export default function Store() {
         setMarketingCookies(Boolean(parsed.marketing));
       }
     } catch { setCookieOpen(true); }
+  }, []);
+
+  useEffect(() => {
+    fetch("/api/products").then(r => r.json()).then((data: { products?: Array<{ id: string; price_cents: number; sale_price_cents?: number | null; discount_percent?: number | null; is_available: boolean }> }) => {
+      if (!data.products?.length) return;
+      const updates = new Map(data.products.map(p => [p.id, p]));
+      setCatalog(products.filter(p => updates.get(p.id)?.is_available !== false).map(p => {
+        const db = updates.get(p.id);
+        if (!db) return p;
+        const onSale = Number.isFinite(db.sale_price_cents) && Number(db.sale_price_cents) < db.price_cents;
+        return { ...p, price: (onSale ? Number(db.sale_price_cents) : db.price_cents) / 100, oldPrice: onSale ? db.price_cents / 100 : undefined, badge: onSale ? `${db.discount_percent ?? 0}% OFF` : p.badge };
+      }));
+    }).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -112,11 +126,11 @@ export default function Store() {
   const categories = ["Todos", "Açaí", "Combos", "Sorvetes", "Milk-shakes", "Vitaminas", "Copos prontos"];
 
   const shown = useMemo(() => {
-    let list = category === "Todos" ? products : products.filter(p => p.category === category);
+    let list = category === "Todos" ? catalog : catalog.filter(p => p.category === category);
     const q = search.trim().toLowerCase();
     if (q) list = list.filter(p => p.name.toLowerCase().includes(q) || p.description.toLowerCase().includes(q) || p.category.toLowerCase().includes(q));
     return list;
-  }, [category, search]);
+  }, [category, search, catalog]);
 
   const total = useMemo(() => cart.reduce((s, i) => s + (i.price + i.premium.reduce((a, n) => a + (premium.find(p => p[0] === n)?.[1] || 0), 0)) * i.qty, 0), [cart]);
   const toggle = (name: string, list: string[], set: (v: string[]) => void, max = 99) => set(list.includes(name) ? list.filter(x => x !== name) : list.length < max ? [...list, name] : list);

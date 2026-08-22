@@ -15,7 +15,7 @@ type Order = {
   created_at: string;
 };
 
-type Product = { id: string; name: string; category: string; description: string; price_cents: number; is_available: boolean; image_url?: string };
+type Product = { id: string; name: string; category: string; description: string; price_cents: number; sale_price_cents?: number | null; discount_percent?: number | null; is_available: boolean; image_url?: string };
 type StoreSettings = { is_open: boolean; store_name: string; updated_at: string };
 
 const PAYMENT_LABELS: Record<string, string> = {
@@ -81,6 +81,7 @@ export default function Admin() {
   const [productForm, setProductForm] = useState({ name: "", category: "Açaí", price: "", description: "", imageUrl: "" });
   const [editingProduct, setEditingProduct] = useState<string | null>(null);
   const [imageFile, setImageFile] = useState<File | null>(null);
+  const [promotionValues, setPromotionValues] = useState<Record<string, string>>({});
   
   const knownOrderIds = useRef<Set<string>>(new Set());
   const initialLoadDone = useRef(false);
@@ -188,6 +189,21 @@ export default function Admin() {
     });
     await loadAll();
     setActionId(null);
+  }
+
+  async function savePromotion(product: Product) {
+    const percent = Math.max(0, Math.min(100, Number(promotionValues[product.id] ?? product.discount_percent ?? 0)));
+    setActionId(`promo-${product.id}`);
+    try {
+      const response = await fetch("/api/admin/products", {
+        method: "PATCH", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ productId: product.id, salePriceCents: percent > 0 ? Math.round(product.price_cents * (1 - percent / 100)) : null, discountPercent: percent || null }),
+      });
+      const data = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(data.error ?? "Não foi possível salvar a promoção.");
+      await loadAll();
+    } catch (error) { setLoadError(error instanceof Error ? error.message : "Não foi possível salvar a promoção."); }
+    finally { setActionId(null); }
   }
 
   async function createProduct(e: React.FormEvent<HTMLFormElement>) {
@@ -484,6 +500,24 @@ export default function Admin() {
         {!loadingData && !loadError && products.length === 0 && <p style={{ color: "var(--muted)", fontSize: 12 }}>Nenhum produto cadastrado ainda.</p>}
       </div>
     );
+  } else if (tab === "Promoções") {
+    body = (
+      <div className="admin-panel">
+        <h2>Promoções</h2>
+        <p style={{ fontSize: 13, color: "var(--muted)", lineHeight: 1.7 }}>Defina a porcentagem e o preço promocional é calculado automaticamente. Coloque <strong>0%</strong> para encerrar a promoção.</p>
+        {loadError && <p style={{ color: "#a44141", fontSize: 12 }}>{loadError}</p>}
+        {products.map(product => {
+          const value = promotionValues[product.id] ?? String(product.discount_percent ?? 0);
+          const percent = Math.max(0, Math.min(100, Number(value) || 0));
+          const sale = Math.round(product.price_cents * (1 - percent / 100));
+          return <div key={product.id} className="admin-order" style={{ padding: "16px 0" }}>
+            <div><b style={{ fontSize: 13 }}>{product.name}</b><span>{money(product.price_cents)} {percent > 0 && <>→ <strong style={{ color: "var(--berry)" }}>{money(sale)}</strong></>}</span></div>
+            <label style={{ fontSize: 10, fontWeight: 800, display: "grid", gap: 5 }}>Desconto %<input inputMode="numeric" min="0" max="100" value={value} onChange={e => setPromotionValues(v => ({ ...v, [product.id]: e.target.value }))} style={{ width: 82, padding: 9, borderRadius: 8, border: "1px solid #d9cfc7" }} /></label>
+            <button onClick={() => savePromotion(product)} disabled={actionId === `promo-${product.id}`} style={{ border: 0, borderRadius: 9, padding: "10px 14px", fontSize: 10, fontWeight: 900, cursor: "pointer", background: percent > 0 ? "var(--purple)" : "#ede0f4", color: percent > 0 ? "#d9f46a" : "var(--berry)" }}>{actionId === `promo-${product.id}` ? "Salvando…" : percent > 0 ? "Aplicar promoção" : "Encerrar promoção"}</button>
+          </div>;
+        })}
+      </div>
+    );
   } else if (tab === "Loja") {
     body = (
       <div className="admin-panel">
@@ -579,7 +613,7 @@ export default function Admin() {
     <main className="admin-shell">
       <aside>
         <Link href="/" className="logo"><b>Açaí 24 horas</b></Link>
-        {(["Visão geral", "Pedidos", "Cardápio", "Loja"] as const).map(x => (
+        {(["Visão geral", "Pedidos", "Cardápio", "Promoções", "Loja"] as const).map(x => (
           <button key={x} className={tab === x ? "active" : ""} onClick={() => setTab(x)}>{x}</button>
         ))}
         <Link href="/admin/fretes" style={{ padding: "12px 14px", borderRadius: 10, color: "#d6c8d5", fontSize: 12, fontWeight: 700 }}>Fretes e entrega</Link>

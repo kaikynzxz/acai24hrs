@@ -16,7 +16,7 @@ export async function GET(request: Request) {
 
   let { data, error } = await supabaseServer
     .from("products")
-    .select("id, name, category, description, price_cents, is_available, sort_order, image_url")
+    .select("id, name, category, description, price_cents, sale_price_cents, discount_percent, is_available, sort_order, image_url")
     .order("sort_order");
 
   if (error) return Response.json({ error: error.message }, { status: 500 });
@@ -26,7 +26,7 @@ export async function GET(request: Request) {
     if (seedError) return Response.json({ error: seedError.message }, { status: 500 });
     const refreshed = await supabaseServer
       .from("products")
-      .select("id, name, category, description, price_cents, is_available, sort_order, image_url")
+      .select("id, name, category, description, price_cents, sale_price_cents, discount_percent, is_available, sort_order, image_url")
       .order("sort_order");
     data = refreshed.data;
     error = refreshed.error;
@@ -53,7 +53,7 @@ export async function PATCH(request: Request) {
     return Response.json({ error: "Não autorizado." }, { status: 401 });
   }
 
-  const body = await request.json().catch(() => null) as { productId?: string; is_available?: boolean; name?: string; category?: string; priceCents?: number; description?: string; imageUrl?: string } | null;
+  const body = await request.json().catch(() => null) as { productId?: string; is_available?: boolean; name?: string; category?: string; priceCents?: number; salePriceCents?: number | null; discountPercent?: number | null; description?: string; imageUrl?: string } | null;
   if (!body?.productId) {
     return Response.json({ error: "productId é obrigatório." }, { status: 400 });
   }
@@ -62,6 +62,11 @@ export async function PATCH(request: Request) {
   if (typeof body.name === "string" && body.name.trim()) updates.name = body.name.trim().slice(0, 100);
   if (typeof body.category === "string" && body.category.trim()) updates.category = body.category.trim().slice(0, 50);
   if (Number.isFinite(body.priceCents) && Number(body.priceCents) >= 0) updates.price_cents = Math.round(Number(body.priceCents));
+  if (body.salePriceCents === null) { updates.sale_price_cents = null; updates.discount_percent = null; }
+  else if (Number.isFinite(body.salePriceCents) && Number(body.salePriceCents) >= 0) {
+    updates.sale_price_cents = Math.round(Number(body.salePriceCents));
+    updates.discount_percent = Math.max(0, Math.min(100, Math.round(Number(body.discountPercent) || 0)));
+  }
   if (typeof body.description === "string") updates.description = body.description.trim().slice(0, 400);
   if (typeof body.imageUrl === "string") updates.image_url = body.imageUrl.trim().slice(0, 1000) || null;
 
