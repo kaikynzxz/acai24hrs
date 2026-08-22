@@ -32,6 +32,7 @@ type CartItem = {
 type Input = {
   customer: { name?: string; phone?: string; address?: string };
   cart: CartItem[];
+  deliveryMethod?: "delivery" | "pickup";
   privacyAccepted?: boolean;
   marketingConsent?: boolean;
   returnOrigin?: string;
@@ -79,7 +80,21 @@ export async function POST(request: Request) {
     return Response.json({ error: "Há um produto inválido ou sem cobertura na sacola." }, { status: 400 });
   }
 
-  if (total < 1400) return Response.json({ error: "O pedido mínimo é R$ 14,00." }, { status: 400 });
+  const { data: deliveryData } = await supabaseServer
+    .from("delivery_settings")
+    .select("pickup_enabled,minimum_order_cents,default_fee_cents,zones")
+    .eq("id", true)
+    .maybeSingle();
+  const delivery = deliveryData ?? { pickup_enabled: true, minimum_order_cents: 1400, default_fee_cents: 500, zones: [] };
+  const minimumOrder = Math.max(0, Number(delivery.minimum_order_cents) || 1400);
+  if (total < minimumOrder) return Response.json({ error: `O pedido mínimo é ${(minimumOrder / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}.` }, { status: 400 });
+
+  const method = body.deliveryMethod === "pickup" && delivery.pickup_enabled ? "pickup" : "delivery";
+  const zones = Array.isArray(delivery.zones) ? delivery.zones as Array<{ name?: string; fee_cents?: number }> : [];
+  const address = String(body.customer.address).toLocaleLowerCase("pt-BR");
+  const matchedZone = zones.find(zone => address.includes(String(zone.name ?? "").toLocaleLowerCase("pt-BR")));
+  const deliveryFeeCents = method === "pickup" ? 0 : Math.max(0, Number(matchedZone?.fee_cents ?? delivery.default_fee_cents) || 0);
+  total += deliveryFeeCents;
 
   const orderId = crypto.randomUUID();
   const requestOrigin = new URL(request.url).origin;
@@ -92,7 +107,7 @@ export async function POST(request: Request) {
     customer_name: String(body.customer.name).trim().slice(0, 120),
     customer_phone: String(body.customer.phone).replace(/[^0-9()+ -]/g, "").slice(0, 30),
     delivery_address: String(body.customer.address).trim().slice(0, 300),
-    items: { items, privacyNoticeVersion: "2026-08-20", marketingConsent: Boolean(body.marketingConsent) },
+    items: { items, deliveryMethod: method, deliveryFeeCents, deliveryZone: matchedZone?.name ?? null, privacyNoticeVersion: "2026-08-20", marketingConsent: Boolean(body.marketingConsent) },
     total_cents: total,
     payment_status: isTestMode ? "paid" : "pending",
     fulfillment_status: "new",
@@ -126,6 +141,13 @@ export async function POST(request: Request) {
     params.set(`line_items[${i}][price_data][unit_amount]`, String(item.unitCents));
     params.set(`line_items[${i}][price_data][product_data][name]`, item.name);
   });
+  if (deliveryFeeCents > 0) {
+    const i = items.length;
+    params.set(`line_items[${i}][quantity]`, "1");
+    params.set(`line_items[${i}][price_data][currency]`, "brl");
+    params.set(`line_items[${i}][price_data][unit_amount]`, String(deliveryFeeCents));
+    params.set(`line_items[${i}][price_data][product_data][name]`, "Taxa de entrega");
+  }
 
   const stripe = await fetch("https://api.stripe.com/v1/checkout/sessions", {
     method: "POST",

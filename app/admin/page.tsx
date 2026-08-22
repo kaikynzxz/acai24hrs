@@ -582,6 +582,7 @@ export default function Admin() {
         {(["Visão geral", "Pedidos", "Cardápio", "Loja"] as const).map(x => (
           <button key={x} className={tab === x ? "active" : ""} onClick={() => setTab(x)}>{x}</button>
         ))}
+        <Link href="/admin/fretes" style={{ padding: "12px 14px", borderRadius: 10, color: "#d6c8d5", fontSize: 12, fontWeight: 700 }}>Fretes e entrega</Link>
         <button className="admin-logout" onClick={logout} style={{ marginTop: "auto" }}>Sair</button>
       </aside>
       <section className="admin-content">
