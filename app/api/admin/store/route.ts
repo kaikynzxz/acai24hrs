@@ -27,11 +27,12 @@ export async function PATCH(request: Request) {
   if (typeof body.is_open === "boolean") updates.is_open = body.is_open;
   if (typeof body.store_name === "string") updates.store_name = body.store_name.trim().slice(0, 80);
 
-  const { error } = await supabaseServer
+  const { data, error } = await supabaseServer
     .from("store_settings")
-    .update(updates)
-    .eq("id", true);
+    .upsert({ id: true, ...updates }, { onConflict: "id" })
+    .select()
+    .single();
 
   if (error) return Response.json({ error: error.message }, { status: 500 });
-  return Response.json({ ok: true });
+  return Response.json({ ok: true, settings: data });
 }

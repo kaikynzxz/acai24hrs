@@ -64,6 +64,7 @@ export default function Store() {
   const [performanceCookies, setPerformanceCookies] = useState(false);
   const [marketingCookies, setMarketingCookies] = useState(false);
   const [hours, setHours] = useState(storeStatus);
+  const [manualClosed, setManualClosed] = useState(false);
   const [cancelledNotice, setCancelledNotice] = useState(false);
 
   useEffect(() => {
@@ -79,23 +80,20 @@ export default function Store() {
   }, []);
 
   useEffect(() => {
-    const refresh = () => setHours(storeStatus());
+    const refresh = () => { if (!manualClosed) setHours(storeStatus()); };
     refresh();
     const timer = window.setInterval(refresh, 60_000);
     return () => window.clearInterval(timer);
-  }, []);
+  }, [manualClosed]);
 
   useEffect(() => {
     fetch("/api/store-status")
       .then(r => r.json())
       .then((data: { is_open?: boolean }) => {
-        if (typeof data.is_open === "boolean") {
-          setHours(prev => ({
-            ...prev,
-            open: data.is_open as boolean,
-            label: data.is_open ? "Aberto" : "Fechado pela loja",
-          }));
-        }
+        // `false` é o fechamento manual; `true` devolve o controle ao horário automático.
+        const closed = data.is_open === false;
+        setManualClosed(closed);
+        if (closed) setHours({ open: false, label: "Fechado pela loja" });
       })
       .catch(() => {});
   }, []);

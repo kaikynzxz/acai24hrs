@@ -74,6 +74,7 @@ export default function Admin() {
   const [products, setProducts] = useState<Product[]>([]);
   const [settings, setSettings] = useState<StoreSettings | null>(null);
   const [loadingData, setLoadingData] = useState(false);
+  const [loadError, setLoadError] = useState("");
   const [actionId, setActionId] = useState<string | null>(null);
   const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
   const [soundEnabled, setSoundEnabled] = useState(true);
@@ -89,31 +90,40 @@ export default function Admin() {
 
   const loadAll = useCallback(async () => {
     setLoadingData(true);
-    const [oRes, sRes, pRes] = await Promise.all([
-      fetch("/api/admin/orders"),
-      fetch("/api/admin/store"),
-      fetch("/api/admin/products"),
-    ]);
-    const [oData, sData, pData] = await Promise.all([oRes.json(), sRes.json(), pRes.json()]);
-    const fetchedOrders: Order[] = oData.orders ?? [];
-    
-    if (initialLoadDone.current && soundEnabled) {
-      const hasNewArrival = fetchedOrders.some(
-        o => o.fulfillment_status === "new" && !knownOrderIds.current.has(o.id)
-      );
-      if (hasNewArrival) {
-        playNotificationChime();
+    setLoadError("");
+    try {
+      const [oRes, sRes, pRes] = await Promise.all([
+        fetch("/api/admin/orders"),
+        fetch("/api/admin/store"),
+        fetch("/api/admin/products"),
+      ]);
+      if ([oRes, sRes, pRes].some(r => !r.ok)) {
+        if ([oRes, sRes, pRes].some(r => r.status === 401)) router.replace("/admin/login");
+        throw new Error("Não foi possível carregar os dados do painel.");
       }
-    }
+      const [oData, sData, pData] = await Promise.all([oRes.json(), sRes.json(), pRes.json()]);
+      const fetchedOrders: Order[] = oData.orders ?? [];
     
-    fetchedOrders.forEach(o => knownOrderIds.current.add(o.id));
-    initialLoadDone.current = true;
+      if (initialLoadDone.current && soundEnabled) {
+        const hasNewArrival = fetchedOrders.some(
+          o => o.fulfillment_status === "new" && !knownOrderIds.current.has(o.id)
+        );
+        if (hasNewArrival) {
+          playNotificationChime();
+        }
+      }
 
-    setOrders(fetchedOrders);
-    setSettings(sData.settings ?? null);
-    setProducts(pData.products ?? []);
-    setLoadingData(false);
-  }, [soundEnabled]);
+      fetchedOrders.forEach(o => knownOrderIds.current.add(o.id));
+      initialLoadDone.current = true;
+      setOrders(fetchedOrders);
+      setSettings(sData.settings ?? null);
+      setProducts(pData.products ?? []);
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "Não foi possível carregar os dados do painel.");
+    } finally {
+      setLoadingData(false);
+    }
+  }, [router, soundEnabled]);
 
   useEffect(() => { if (authChecked) loadAll(); }, [authChecked, loadAll]);
 
@@ -149,13 +159,21 @@ export default function Admin() {
   async function toggleStore() {
     if (!settings) return;
     setActionId("store");
-    await fetch("/api/admin/store", {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ is_open: !settings.is_open }),
-    });
-    await loadAll();
-    setActionId(null);
+    try {
+      const response = await fetch("/api/admin/store", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ is_open: !settings.is_open }),
+      });
+      const data = await response.json() as { settings?: StoreSettings; error?: string };
+      if (!response.ok) throw new Error(data.error ?? "Não foi possível atualizar a loja.");
+      if (data.settings) setSettings(data.settings);
+      await loadAll();
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "Não foi possível atualizar a loja.");
+    } finally {
+      setActionId(null);
+    }
   }
 
   async function toggleProduct(productId: string, current: boolean) {
@@ -407,6 +425,7 @@ export default function Admin() {
     body = (
       <div className="admin-panel">
         <h2>Disponibilidade de produtos</h2>
+        {loadError && <p style={{ color: "#a44141", fontSize: 12 }}>{loadError}</p>}
         {Object.entries(byCategory).map(([cat, prods]) => (
           <div key={cat}>
             <p style={{ fontSize: 9, fontWeight: 900, letterSpacing: 1.5, color: "var(--berry)", textTransform: "uppercase", margin: "20px 0 10px" }}>{cat}</p>
@@ -432,7 +451,8 @@ export default function Admin() {
             ))}
           </div>
         ))}
-        {products.length === 0 && <p style={{ color: "var(--muted)", fontSize: 12 }}>Carregando produtos…</p>}
+        {loadingData && <p style={{ color: "var(--muted)", fontSize: 12 }}>Carregando produtos…</p>}
+        {!loadingData && !loadError && products.length === 0 && <p style={{ color: "var(--muted)", fontSize: 12 }}>Nenhum produto cadastrado ainda.</p>}
       </div>
     );
   } else if (tab === "Loja") {
