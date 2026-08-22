@@ -16,7 +16,7 @@ export async function GET(request: Request) {
 
   let { data, error } = await supabaseServer
     .from("products")
-    .select("id, name, category, price_cents, is_available, sort_order, image_url")
+    .select("id, name, category, description, price_cents, is_available, sort_order, image_url")
     .order("sort_order");
 
   if (error) return Response.json({ error: error.message }, { status: 500 });
@@ -26,13 +26,26 @@ export async function GET(request: Request) {
     if (seedError) return Response.json({ error: seedError.message }, { status: 500 });
     const refreshed = await supabaseServer
       .from("products")
-      .select("id, name, category, price_cents, is_available, sort_order, image_url")
+      .select("id, name, category, description, price_cents, is_available, sort_order, image_url")
       .order("sort_order");
     data = refreshed.data;
     error = refreshed.error;
   }
   if (error) return Response.json({ error: error.message }, { status: 500 });
   return Response.json({ products: data ?? [] });
+}
+
+export async function POST(request: Request) {
+  if (!await verifyAdminRequest(request)) return Response.json({ error: "Não autorizado." }, { status: 401 });
+  const body = await request.json().catch(() => null) as { name?: string; category?: string; priceCents?: number; description?: string; imageUrl?: string } | null;
+  const name = body?.name?.trim();
+  const category = body?.category?.trim();
+  const price_cents = Math.round(Number(body?.priceCents));
+  if (!name || !category || !Number.isFinite(price_cents) || price_cents < 0) return Response.json({ error: "Preencha nome, categoria e preço." }, { status: 400 });
+  const id = `${name.toLowerCase().normalize("NFD").replace(/[\\u0300-\\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "")}-${crypto.randomUUID().slice(0, 6)}`;
+  const { data, error } = await supabaseServer.from("products").insert({ id, name: name.slice(0, 100), category: category.slice(0, 50), price_cents, description: body?.description?.trim().slice(0, 400) || "", image_url: body?.imageUrl?.trim().slice(0, 1000) || null, is_available: true, sort_order: Date.now() }).select().single();
+  if (error) return Response.json({ error: error.message }, { status: 500 });
+  return Response.json({ product: data }, { status: 201 });
 }
 
 export async function PATCH(request: Request) {

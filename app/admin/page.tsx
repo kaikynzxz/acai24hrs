@@ -15,7 +15,7 @@ type Order = {
   created_at: string;
 };
 
-type Product = { id: string; name: string; category: string; price_cents: number; is_available: boolean; image_url?: string };
+type Product = { id: string; name: string; category: string; description: string; price_cents: number; is_available: boolean; image_url?: string };
 type StoreSettings = { is_open: boolean; store_name: string; updated_at: string };
 
 const PAYMENT_LABELS: Record<string, string> = {
@@ -78,6 +78,7 @@ export default function Admin() {
   const [actionId, setActionId] = useState<string | null>(null);
   const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const [productForm, setProductForm] = useState({ name: "", category: "Açaí", price: "", description: "", imageUrl: "" });
   
   const knownOrderIds = useRef<Set<string>>(new Set());
   const initialLoadDone = useRef(false);
@@ -185,6 +186,19 @@ export default function Admin() {
     });
     await loadAll();
     setActionId(null);
+  }
+
+  async function createProduct(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setActionId("new-product");
+    try {
+      const response = await fetch("/api/admin/products", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: productForm.name, category: productForm.category, priceCents: Math.round(Number(productForm.price.replace(",", ".")) * 100), description: productForm.description, imageUrl: productForm.imageUrl }) });
+      const data = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(data.error ?? "Não foi possível cadastrar o produto.");
+      setProductForm({ name: "", category: "Açaí", price: "", description: "", imageUrl: "" });
+      await loadAll();
+    } catch (error) { setLoadError(error instanceof Error ? error.message : "Não foi possível cadastrar o produto."); }
+    finally { setActionId(null); }
   }
 
   async function logout() {
@@ -426,6 +440,14 @@ export default function Admin() {
       <div className="admin-panel">
         <h2>Disponibilidade de produtos</h2>
         {loadError && <p style={{ color: "#a44141", fontSize: 12 }}>{loadError}</p>}
+        <form onSubmit={createProduct} style={{ display: "grid", gridTemplateColumns: "1fr 160px 130px", gap: 10, padding: "16px", margin: "0 0 22px", border: "1px solid #e8ded6", borderRadius: 14, background: "#f8f2ec" }}>
+          <input required placeholder="Nome do produto" value={productForm.name} onChange={e => setProductForm(v => ({ ...v, name: e.target.value }))} style={{ padding: 11, border: "1px solid #d9cfc7", borderRadius: 9 }} />
+          <input required placeholder="Categoria" value={productForm.category} onChange={e => setProductForm(v => ({ ...v, category: e.target.value }))} style={{ padding: 11, border: "1px solid #d9cfc7", borderRadius: 9 }} />
+          <input required inputMode="decimal" placeholder="Preço (R$)" value={productForm.price} onChange={e => setProductForm(v => ({ ...v, price: e.target.value }))} style={{ padding: 11, border: "1px solid #d9cfc7", borderRadius: 9 }} />
+          <input placeholder="Descrição" value={productForm.description} onChange={e => setProductForm(v => ({ ...v, description: e.target.value }))} style={{ gridColumn: "span 2", padding: 11, border: "1px solid #d9cfc7", borderRadius: 9 }} />
+          <input placeholder="Link da foto (https://...)" value={productForm.imageUrl} onChange={e => setProductForm(v => ({ ...v, imageUrl: e.target.value }))} style={{ padding: 11, border: "1px solid #d9cfc7", borderRadius: 9 }} />
+          <button className="primary" disabled={actionId === "new-product"} style={{ gridColumn: "1/-1", justifyContent: "center" }}>{actionId === "new-product" ? "Cadastrando…" : "+ Adicionar produto"}</button>
+        </form>
         {Object.entries(byCategory).map(([cat, prods]) => (
           <div key={cat}>
             <p style={{ fontSize: 9, fontWeight: 900, letterSpacing: 1.5, color: "var(--berry)", textTransform: "uppercase", margin: "20px 0 10px" }}>{cat}</p>
@@ -433,7 +455,7 @@ export default function Admin() {
               <div key={p.id} className="admin-order" style={{ padding: "12px 0" }}>
                 <div>
                   <b style={{ fontSize: 12 }}>{p.name}</b>
-                  <span style={{ fontSize: 10, color: "var(--muted)" }}>{money(p.price_cents)}</span>
+                  <span style={{ fontSize: 10, color: "var(--muted)" }}>{money(p.price_cents)}{p.description ? ` · ${p.description}` : ""}</span>
                 </div>
                 <button
                   disabled={actionId === p.id}
