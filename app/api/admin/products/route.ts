@@ -53,14 +53,22 @@ export async function PATCH(request: Request) {
     return Response.json({ error: "Não autorizado." }, { status: 401 });
   }
 
-  const body = await request.json().catch(() => null) as { productId?: string; is_available?: boolean } | null;
-  if (!body?.productId || typeof body.is_available !== "boolean") {
-    return Response.json({ error: "productId e is_available são obrigatórios." }, { status: 400 });
+  const body = await request.json().catch(() => null) as { productId?: string; is_available?: boolean; name?: string; category?: string; priceCents?: number; description?: string; imageUrl?: string } | null;
+  if (!body?.productId) {
+    return Response.json({ error: "productId é obrigatório." }, { status: 400 });
   }
+  const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  if (typeof body.is_available === "boolean") updates.is_available = body.is_available;
+  if (typeof body.name === "string" && body.name.trim()) updates.name = body.name.trim().slice(0, 100);
+  if (typeof body.category === "string" && body.category.trim()) updates.category = body.category.trim().slice(0, 50);
+  if (Number.isFinite(body.priceCents) && Number(body.priceCents) >= 0) updates.price_cents = Math.round(Number(body.priceCents));
+  if (typeof body.description === "string") updates.description = body.description.trim().slice(0, 400);
+  if (typeof body.imageUrl === "string") updates.image_url = body.imageUrl.trim().slice(0, 1000) || null;
 
   const { error } = await supabaseServer
     .from("products")
-    .upsert({ id: body.productId, is_available: body.is_available, updated_at: new Date().toISOString() }, { onConflict: "id" });
+    .update(updates)
+    .eq("id", body.productId);
 
   if (error) return Response.json({ error: error.message }, { status: 500 });
   return Response.json({ ok: true });

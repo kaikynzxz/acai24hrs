@@ -79,6 +79,8 @@ export default function Admin() {
   const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [productForm, setProductForm] = useState({ name: "", category: "Açaí", price: "", description: "", imageUrl: "" });
+  const [editingProduct, setEditingProduct] = useState<string | null>(null);
+  const [imageFile, setImageFile] = useState<File | null>(null);
   
   const knownOrderIds = useRef<Set<string>>(new Set());
   const initialLoadDone = useRef(false);
@@ -192,10 +194,13 @@ export default function Admin() {
     e.preventDefault();
     setActionId("new-product");
     try {
-      const response = await fetch("/api/admin/products", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: productForm.name, category: productForm.category, priceCents: Math.round(Number(productForm.price.replace(",", ".")) * 100), description: productForm.description, imageUrl: productForm.imageUrl }) });
+      let imageUrl = productForm.imageUrl;
+      if (imageFile) { const form = new FormData(); form.append("file", imageFile); const upload = await fetch("/api/admin/product-image", { method: "POST", body: form }); const uploaded = await upload.json() as { url?: string; error?: string }; if (!upload.ok || !uploaded.url) throw new Error(uploaded.error ?? "Não foi possível enviar a foto."); imageUrl = uploaded.url; }
+      const response = await fetch("/api/admin/products", { method: editingProduct ? "PATCH" : "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ productId: editingProduct ?? undefined, name: productForm.name, category: productForm.category, priceCents: Math.round(Number(productForm.price.replace(",", ".")) * 100), description: productForm.description, imageUrl }) });
       const data = await response.json() as { error?: string };
       if (!response.ok) throw new Error(data.error ?? "Não foi possível cadastrar o produto.");
       setProductForm({ name: "", category: "Açaí", price: "", description: "", imageUrl: "" });
+      setEditingProduct(null); setImageFile(null);
       await loadAll();
     } catch (error) { setLoadError(error instanceof Error ? error.message : "Não foi possível cadastrar o produto."); }
     finally { setActionId(null); }
@@ -446,7 +451,8 @@ export default function Admin() {
           <input required inputMode="decimal" placeholder="Preço (R$)" value={productForm.price} onChange={e => setProductForm(v => ({ ...v, price: e.target.value }))} style={{ padding: 11, border: "1px solid #d9cfc7", borderRadius: 9 }} />
           <input placeholder="Descrição" value={productForm.description} onChange={e => setProductForm(v => ({ ...v, description: e.target.value }))} style={{ gridColumn: "span 2", padding: 11, border: "1px solid #d9cfc7", borderRadius: 9 }} />
           <input placeholder="Link da foto (https://...)" value={productForm.imageUrl} onChange={e => setProductForm(v => ({ ...v, imageUrl: e.target.value }))} style={{ padding: 11, border: "1px solid #d9cfc7", borderRadius: 9 }} />
-          <button className="primary" disabled={actionId === "new-product"} style={{ gridColumn: "1/-1", justifyContent: "center" }}>{actionId === "new-product" ? "Cadastrando…" : "+ Adicionar produto"}</button>
+          <input type="file" accept="image/png,image/jpeg,image/webp" onChange={e => setImageFile(e.target.files?.[0] ?? null)} style={{ gridColumn: "span 2", fontSize: 11 }} />
+          <button className="primary" disabled={actionId === "new-product"} style={{ gridColumn: "1/-1", justifyContent: "center" }}>{actionId === "new-product" ? "Salvando…" : editingProduct ? "Salvar alterações" : "+ Adicionar produto"}</button>
         </form>
         {Object.entries(byCategory).map(([cat, prods]) => (
           <div key={cat}>
@@ -469,6 +475,7 @@ export default function Admin() {
                 >
                   {actionId === p.id ? "…" : p.is_available ? "Disponível" : "Indisponível"}
                 </button>
+                <button onClick={() => { setEditingProduct(p.id); setImageFile(null); setProductForm({ name: p.name, category: p.category, price: String(p.price_cents / 100), description: p.description ?? "", imageUrl: p.image_url ?? "" }); }} style={{ border: 0, borderRadius: 9, padding: "8px 14px", fontSize: 10, fontWeight: 900, cursor: "pointer", background: "#ede0f4", color: "var(--berry)" }}>Editar</button>
               </div>
             ))}
           </div>
